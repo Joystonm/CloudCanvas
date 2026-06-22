@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background: #121212;
+    color: #ffffff;
+    font-family: 'SpotifyMixUI', 'Helvetica Neue', helvetica, arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-cc-accent text-black font-bold text-sm uppercase tracking-widest px-8 py-3 rounded-pill transition-all duration-200 hover:scale-105 hover:bg-white active:scale-100;
+  }
+  .btn-pill {
+    @apply bg-cc-elevated text-cc-text font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-pill transition-all duration-200 hover:bg-cc-card;
+  }
+  .btn-outline {
+    @apply border border-cc-border-lt text-cc-text text-sm px-4 py-2 rounded-pill transition-all duration-200 hover:border-cc-text;
+  }
+  .card {
+    @apply bg-cc-surface rounded-lg shadow-medium transition-all duration-200 hover:bg-cc-elevated;
+  }
+  .panel {
+    @apply bg-cc-surface border-r border-cc-border flex flex-col;
+  }
+  .input-pill {
+    @apply bg-cc-elevated text-cc-text rounded-pill px-5 py-3 text-sm outline-none shadow-inset-border focus:shadow-[rgb(18,18,18)_0px_1px_0px,rgba(255,255,255,0.4)_0px_0px_0px_1px_inset] w-full placeholder:text-cc-muted transition-all;
+  }
+  .scrollbar-dark {
+    scrollbar-width: thin;
+    scrollbar-color: #4d4d4d #181818;
+  }
+  .scrollbar-dark::-webkit-scrollbar { width: 6px; }
+  .scrollbar-dark::-webkit-scrollbar-track { background: #181818; }
+  .scrollbar-dark::-webkit-scrollbar-thumb { background: #4d4d4d; border-radius: 9999px; }
+}
+
+/* Smooth panel resize handle */
+[data-panel-resize-handle-id] {
+  background: #4d4d4d;
+  transition: background 0.2s;
+}
+[data-panel-resize-handle-id]:hover {
+  background: #1ed760;
+}
