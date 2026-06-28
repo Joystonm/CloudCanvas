@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
 import type { Project, Layer, Tool, ChatMessage, TransformationNode, ExportEntry, GenerationPreset } from '../types'
+import type { ShapeKind } from '../types'
 
 interface AppState {
   // Active project
@@ -18,6 +19,15 @@ interface AppState {
   brushStrokes: number[][]  // array of [x,y,...] point arrays
   setBrushStrokes: (strokes: number[][]) => void
   clearBrushStrokes: () => void
+  // Shape tool state
+  shapeColor: string
+  strokeColor: string
+  strokeWidth: number
+  activeShapeKind: ShapeKind
+  setShapeColor: (c: string) => void
+  setStrokeColor: (c: string) => void
+  setStrokeWidth: (w: number) => void
+  setActiveShapeKind: (k: ShapeKind) => void
   // Chat
   chatMessages: ChatMessage[]
   isGenerating: boolean
@@ -85,6 +95,14 @@ export const useStore = create<AppState>()(
       brushStrokes: [],
       setBrushStrokes: (strokes) => set({ brushStrokes: strokes }),
       clearBrushStrokes: () => set({ brushStrokes: [] }),
+      shapeColor: '#1ed760',
+      strokeColor: '#ffffff',
+      strokeWidth: 0,
+      activeShapeKind: 'rect' as ShapeKind,
+      setShapeColor: (c) => set({ shapeColor: c }),
+      setStrokeColor: (c) => set({ strokeColor: c }),
+      setStrokeWidth: (w) => set({ strokeWidth: w }),
+      setActiveShapeKind: (k) => set({ activeShapeKind: k }),
       chatMessages: [],
       isGenerating: false,
       selectedPreset: 'photo',

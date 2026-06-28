@@ -1,4 +1,5 @@
-export type Tool = 'select' | 'crop' | 'move' | 'lasso' | 'heal' | 'magic-remove' | 'expand' | 'text' | 'generate';
+export type Tool = 'select' | 'crop' | 'move' | 'lasso' | 'heal' | 'magic-remove' | 'expand' | 'text' | 'generate' | 'shape';
+export type ShapeKind = 'rect' | 'ellipse' | 'triangle' | 'star' | 'arrow';
 
 export interface Layer {
   id: string;
@@ -17,7 +18,10 @@ export interface Layer {
   transformations?: string[];
   naturalWidth?: number;   // original pixel dimensions of the uploaded image
   naturalHeight?: number;
-  // text-specific
+  // shape-specific
+  shapeKind?: 'rect' | 'ellipse' | 'triangle' | 'star' | 'arrow'
+  strokeColor?: string
+  strokeWidth?: number
   text?: string;
   fontSize?: number;
   fill?: string;

@@ -169,6 +169,72 @@ function TextPropertiesPanel({ layer, onChange }: { layer: Layer; onChange: (p: 
   )
 }
 
+// ── Shape Properties ──────────────────────────────────────────────────────────
+function ShapePropertiesPanel({ layer, onChange }: { layer: Layer; onChange: (p: Partial<Layer>) => void }) {
+  return (
+    <div className="space-y-3 pt-1">
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Fill Color</p>
+        <div className="flex items-center gap-2">
+          <label className="relative w-8 h-8 rounded-lg overflow-hidden border border-cc-border cursor-pointer flex-shrink-0">
+            <input type="color" value={layer.fill || '#1ed760'} onChange={(e) => onChange({ fill: e.target.value })} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+            <div className="w-full h-full rounded-lg" style={{ background: layer.fill || '#1ed760' }} />
+          </label>
+          <input type="text" value={layer.fill || '#1ed760'}
+            onChange={(e) => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange({ fill: e.target.value }) }}
+            className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs font-mono" />
+        </div>
+      </div>
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Stroke Color</p>
+        <div className="flex items-center gap-2">
+          <label className="relative w-8 h-8 rounded-lg overflow-hidden border border-cc-border cursor-pointer flex-shrink-0">
+            <input type="color" value={layer.strokeColor || '#ffffff'} onChange={(e) => onChange({ strokeColor: e.target.value })} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+            <div className="w-full h-full rounded-lg" style={{ background: layer.strokeColor || '#ffffff' }} />
+          </label>
+          <input type="text" value={layer.strokeColor || '#ffffff'}
+            onChange={(e) => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange({ strokeColor: e.target.value }) }}
+            className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs font-mono" />
+        </div>
+      </div>
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Stroke Width: {layer.strokeWidth ?? 0}px</p>
+        <input type="range" min={0} max={20} value={layer.strokeWidth ?? 0} onChange={(e) => onChange({ strokeWidth: Number(e.target.value) })} className="w-full accent-cc-accent" />
+      </div>
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Opacity: {Math.round((layer.opacity ?? 1) * 100)}%</p>
+        <input type="range" min={0} max={100} value={Math.round((layer.opacity ?? 1) * 100)} onChange={(e) => onChange({ opacity: Number(e.target.value) / 100 })} className="w-full accent-cc-accent" />
+      </div>
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Size</p>
+        <div className="flex gap-2">
+          <div className="flex items-center gap-1 flex-1">
+            <span className="text-cc-muted text-xs">W</span>
+            <input type="number" value={Math.round(layer.width)} onChange={(e) => onChange({ width: Math.max(10, Number(e.target.value)) })} className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs" />
+          </div>
+          <div className="flex items-center gap-1 flex-1">
+            <span className="text-cc-muted text-xs">H</span>
+            <input type="number" value={Math.round(layer.height)} onChange={(e) => onChange({ height: Math.max(10, Number(e.target.value)) })} className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs" />
+          </div>
+        </div>
+      </div>
+      <div>
+        <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Position</p>
+        <div className="flex gap-2">
+          <div className="flex items-center gap-1 flex-1">
+            <span className="text-cc-muted text-xs">X</span>
+            <input type="number" value={Math.round(layer.x)} onChange={(e) => onChange({ x: Number(e.target.value) })} className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs" />
+          </div>
+          <div className="flex items-center gap-1 flex-1">
+            <span className="text-cc-muted text-xs">Y</span>
+            <input type="number" value={Math.round(layer.y)} onChange={(e) => onChange({ y: Number(e.target.value) })} className="flex-1 bg-cc-elevated border border-cc-border rounded px-2 py-1 text-cc-text text-xs" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function AIEditPanel() {
   const { project, selectedLayerId, updateLayer, pushHistory } = useStore()
@@ -184,6 +250,7 @@ export function AIEditPanel() {
   const selectedLayer = project.layers.find((l) => l.id === selectedLayerId)
   const canApply = !!(selectedLayer?.cloudinaryPublicId && selectedLayer?.src)
   const isText = selectedLayer?.type === 'text'
+  const isShape = selectedLayer?.type === 'shape'
 
   function toggle(id: string) { setOpenSection((s) => s === id ? '' : id) }
 
@@ -226,7 +293,14 @@ export function AIEditPanel() {
           </Section>
         )}
 
-        {!isText && (<>
+        {/* Shape properties */}
+        {isShape && (
+          <Section title="Shape Properties" icon={<Palette size={12} />} open={openSection === 'shape'} onToggle={() => toggle('shape')}>
+            <ShapePropertiesPanel layer={selectedLayer!} onChange={(p) => updateLayer(selectedLayer!.id, p)} />
+          </Section>
+        )}
+
+        {!isText && !isShape && (<>
 
           {/* Generative AI */}
           <Section title="Generative AI" icon={<Sparkles size={12} />} open={openSection === 'genai'} onToggle={() => toggle('genai')}>

@@ -8,6 +8,7 @@ const TOOL_KEYS: Record<string, Tool> = {
   c: 'crop',
   l: 'lasso',
   t: 'text',
+  s: 'shape',
   w: 'magic-remove',
   h: 'heal',
   e: 'expand',

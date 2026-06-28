@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { Stage, Layer, Image as KonvaImage, Transformer, Text, Rect, Line } from 'react-konva'
+import { Stage, Layer, Image as KonvaImage, Transformer, Text, Rect, Line, Ellipse, RegularPolygon, Star, Arrow } from 'react-konva'
 import useImage from 'use-image'
 import { Loader2 } from 'lucide-react'
 import type Konva from 'konva'
@@ -108,6 +108,78 @@ function TextLayer({
   )
 }
 
+function ShapeLayer({
+  layer, isSelected, isDraggable, onSelect, onChange,
+}: {
+  layer: LayerType
+  isSelected: boolean
+  isDraggable: boolean
+  onSelect: () => void
+  onChange: (patch: Partial<LayerType>) => void
+}) {
+  const shapeRef = useRef<Konva.Shape>(null)
+  const trRef = useRef<Konva.Transformer>(null)
+
+  useEffect(() => {
+    if (isSelected && trRef.current && shapeRef.current) {
+      trRef.current.nodes([shapeRef.current])
+      trRef.current.getLayer()?.batchDraw()
+    } else if (!isSelected && trRef.current) {
+      trRef.current.nodes([])
+      trRef.current.getLayer()?.batchDraw()
+    }
+  }, [isSelected])
+
+  const common = {
+    ref: shapeRef as any,
+    x: layer.x + layer.width / 2,
+    y: layer.y + layer.height / 2,
+    fill: layer.fill || '#1ed760',
+    stroke: layer.strokeColor || undefined,
+    strokeWidth: layer.strokeWidth || 0,
+    opacity: layer.opacity,
+    visible: layer.visible,
+    draggable: isDraggable && !layer.locked,
+    onClick: onSelect, onTap: onSelect,
+    onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
+      const node = e.target
+      onChange({ x: node.x() - layer.width / 2, y: node.y() - layer.height / 2 })
+    },
+    onTransformEnd: (e: Konva.KonvaEventObject<Event>) => {
+      const node = e.target
+      const sx = node.scaleX(), sy = node.scaleY()
+      node.scaleX(1); node.scaleY(1)
+      const newW = Math.max(10, layer.width * sx)
+      const newH = Math.max(10, layer.height * sy)
+      onChange({ x: node.x() - newW / 2, y: node.y() - newH / 2, width: newW, height: newH })
+    },
+  }
+
+  const kind = layer.shapeKind || 'rect'
+
+  return (
+    <>
+      {kind === 'rect' && <Rect {...common} x={layer.x} y={layer.y} width={layer.width} height={layer.height}
+        onDragEnd={(e) => onChange({ x: e.target.x(), y: e.target.y() })}
+        onTransformEnd={(e) => {
+          const node = e.target; const sx = node.scaleX(), sy = node.scaleY()
+          node.scaleX(1); node.scaleY(1)
+          onChange({ x: node.x(), y: node.y(), width: Math.max(10, layer.width * sx), height: Math.max(10, layer.height * sy) })
+        }}
+      />}
+      {kind === 'ellipse' && <Ellipse {...common} radiusX={layer.width / 2} radiusY={layer.height / 2} />}
+      {kind === 'triangle' && <RegularPolygon {...common} sides={3} radius={Math.min(layer.width, layer.height) / 2} />}
+      {kind === 'star' && <Star {...common} numPoints={5} innerRadius={Math.min(layer.width, layer.height) / 4} outerRadius={Math.min(layer.width, layer.height) / 2} />}
+      {kind === 'arrow' && <Arrow {...common} x={layer.x} y={layer.y + layer.height / 2}
+        points={[0, 0, layer.width, 0]}
+        pointerLength={12} pointerWidth={10}
+        onDragEnd={(e) => onChange({ x: e.target.x(), y: e.target.y() - layer.height / 2 })}
+      />}
+      {isSelected && <Transformer ref={trRef} boundBoxFunc={(_, b) => ({ ...b, width: Math.max(10, b.width), height: Math.max(10, b.height) })} />}
+    </>
+  )
+}
+
 // Checkerboard pattern for transparent background
 function CheckerRect({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   const size = 12
@@ -139,7 +211,7 @@ export function getStage() { return _stageInstance }
 export function getStageExportParams() { return _stageExportParams }
 
 export function Canvas() {
-  const { project, activeTool, selectedLayerId, zoom, setSelectedLayer, updateLayer, setZoom, pushHistory, addLayer, setBrushStrokes, brushStrokes } = useStore()
+  const { project, activeTool, selectedLayerId, zoom, setSelectedLayer, updateLayer, setZoom, pushHistory, addLayer, setBrushStrokes, brushStrokes, shapeColor, strokeColor, strokeWidth, activeShapeKind } = useStore()
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
   const [size, setSize] = useState({ width: 800, height: 600 })
@@ -155,6 +227,10 @@ export function Canvas() {
   // Brush/erase painting state
   const isDrawingBrush = useRef(false)
   const currentStroke = useRef<number[]>([])
+
+  // Shape drawing state
+  const [draftShape, setDraftShape] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const shapeStart = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -306,12 +382,54 @@ export function Canvas() {
     setLassoPoints([])
   }, [lassoPoints, selectedLayerId, project.layers, updateLayer, pushHistory])
 
+  // ── Shape drawing handlers ─────────────────────────────────────
+  const onShapeMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stage = e.target.getStage(); if (!stage) return
+    const pos = toCanvas(stage); if (!pos) return
+    shapeStart.current = pos
+    setDraftShape({ x: pos.x, y: pos.y, w: 0, h: 0 })
+  }, [toCanvas])
+
+  const onShapeMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (!shapeStart.current) return
+    const stage = e.target.getStage(); if (!stage) return
+    const pos = toCanvas(stage); if (!pos) return
+    setDraftShape({
+      x: Math.min(shapeStart.current.x, pos.x),
+      y: Math.min(shapeStart.current.y, pos.y),
+      w: Math.abs(pos.x - shapeStart.current.x),
+      h: Math.abs(pos.y - shapeStart.current.y),
+    })
+  }, [toCanvas])
+
+  const onShapeMouseUp = useCallback(() => {
+    if (!draftShape || draftShape.w < 5 || draftShape.h < 5) {
+      setDraftShape(null); shapeStart.current = null; return
+    }
+    const kindLabels: Record<string, string> = { rect: 'Rectangle', ellipse: 'Ellipse', triangle: 'Triangle', star: 'Star', arrow: 'Arrow' }
+    addLayer({
+      name: kindLabels[activeShapeKind] || 'Shape',
+      type: 'shape',
+      shapeKind: activeShapeKind,
+      fill: shapeColor,
+      strokeColor,
+      strokeWidth,
+      visible: true, locked: false, opacity: 1,
+      x: draftShape.x, y: draftShape.y,
+      width: draftShape.w, height: draftShape.h,
+    })
+    pushHistory(`Add ${kindLabels[activeShapeKind]}`)
+    setDraftShape(null); shapeStart.current = null
+  }, [draftShape, activeShapeKind, shapeColor, strokeColor, strokeWidth, addLayer, pushHistory])
+
   // ── Stage event routing ────────────────────────────────────────
   const stageProps: Partial<Konva.StageConfig> = {}
   if (activeTool === 'crop') {
     Object.assign(stageProps, { onMouseDown: onCropMouseDown, onMouseMove: onCropMouseMove, onMouseUp: onCropMouseUp })
   } else if (activeTool === 'lasso') {
     Object.assign(stageProps, { onMouseDown: onLassoMouseDown, onMouseMove: onLassoMouseMove, onMouseUp: onLassoMouseUp })
+  } else if (activeTool === 'shape') {
+    Object.assign(stageProps, { onMouseDown: onShapeMouseDown, onMouseMove: onShapeMouseMove, onMouseUp: onShapeMouseUp })
   } else if (activeTool === 'heal') {
     Object.assign(stageProps, {
       onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -364,7 +482,7 @@ export function Canvas() {
     <div
       ref={containerRef}
       className="flex-1 bg-cc-bg overflow-hidden relative"
-      style={{ cursor: activeTool === 'crop' || activeTool === 'lasso' ? 'crosshair' : activeTool === 'heal' ? 'cell' : activeTool === 'move' ? 'grab' : 'default' }}
+      style={{ cursor: activeTool === 'crop' || activeTool === 'lasso' || activeTool === 'shape' ? 'crosshair' : activeTool === 'heal' ? 'cell' : activeTool === 'move' ? 'grab' : 'default' }}
     >
       <Stage
         ref={stageRef}
@@ -397,12 +515,17 @@ export function Canvas() {
             const onSelect = () => setSelectedLayer(layer.id)
             if (layer.type === 'image') return <ImageLayer key={layer.id} layer={layer} isSelected={isSelected} isDraggable={isDraggable} onSelect={onSelect} onChange={onChange} />
             if (layer.type === 'text') return <TextLayer key={layer.id} layer={layer} isSelected={isSelected} isDraggable={isDraggable} onSelect={onSelect} onChange={onChange} />
+            if (layer.type === 'shape') return <ShapeLayer key={layer.id} layer={layer} isSelected={isSelected} isDraggable={isDraggable} onSelect={onSelect} onChange={onChange} />
             return null
           })}
         </Layer>
 
         {/* Selection overlay layer */}
         <Layer x={offsetX} y={offsetY} scaleX={effectiveZoom} scaleY={effectiveZoom}>
+          {/* Draft shape preview */}
+          {activeTool === 'shape' && draftShape && draftShape.w > 2 && draftShape.h > 2 && (
+            <Rect x={draftShape.x} y={draftShape.y} width={draftShape.w} height={draftShape.h} fill={shapeColor + '88'} stroke={shapeColor} strokeWidth={1 / effectiveZoom} dash={[4 / effectiveZoom, 4 / effectiveZoom]} />
+          )}
           {/* Crop rect */}
           {activeTool === 'crop' && cropRect && (
             <>
