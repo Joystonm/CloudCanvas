@@ -211,7 +211,7 @@ export function getStage() { return _stageInstance }
 export function getStageExportParams() { return _stageExportParams }
 
 export function Canvas() {
-  const { project, activeTool, selectedLayerId, zoom, setSelectedLayer, updateLayer, setZoom, pushHistory, addLayer, setBrushStrokes, brushStrokes, shapeColor, strokeColor, strokeWidth, activeShapeKind } = useStore()
+  const { project, activeTool, selectedLayerId, zoom, setSelectedLayer, setActiveTool, updateLayer, setZoom, pushHistory, addLayer, setBrushStrokes, brushStrokes, shapeColor, strokeColor, strokeWidth, activeShapeKind } = useStore()
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
   const [size, setSize] = useState({ width: 800, height: 600 })
@@ -457,17 +457,20 @@ export function Canvas() {
   } else {
     Object.assign(stageProps, {
       onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => {
-        if (e.target !== e.target.getStage()) return
-        setSelectedLayer(null)
         if (activeTool === 'text') {
-          const pos = toCanvas(e.target.getStage()!)
+          const stage = e.target.getStage()
+          if (!stage) return
+          const pos = toCanvas(stage)
           if (!pos) return
           addLayer({
             name: 'Text', type: 'text',
             visible: true, locked: false, opacity: 1,
             x: pos.x, y: pos.y, width: 200, height: 50,
-            text: 'Double-click to edit', fontSize: 24, fill: '#ffffff',
+            text: 'Double-click to edit', fontSize: 24, fill: '#000000',
           })
+          setActiveTool('select')
+        } else if (e.target === e.target.getStage()) {
+          setSelectedLayer(null)
         }
       }
     })
@@ -482,7 +485,7 @@ export function Canvas() {
     <div
       ref={containerRef}
       className="flex-1 bg-cc-bg overflow-hidden relative"
-      style={{ cursor: activeTool === 'crop' || activeTool === 'lasso' || activeTool === 'shape' ? 'crosshair' : activeTool === 'heal' ? 'cell' : activeTool === 'move' ? 'grab' : 'default' }}
+      style={{ cursor: activeTool === 'crop' || activeTool === 'lasso' || activeTool === 'shape' ? 'crosshair' : activeTool === 'heal' ? 'cell' : activeTool === 'move' ? 'grab' : activeTool === 'text' ? 'text' : 'default' }}
     >
       <Stage
         ref={stageRef}

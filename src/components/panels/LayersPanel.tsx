@@ -95,7 +95,7 @@ export function LayersPanel() {
               height: 50,
               text: 'Double-click to edit',
               fontSize: 24,
-              fill: '#ffffff',
+              fill: '#000000',
             })
           }
           className="flex-1 flex items-center justify-center gap-1 btn-outline text-xs py-1.5"
