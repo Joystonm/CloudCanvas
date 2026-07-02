@@ -80,7 +80,7 @@ export function GeneratorPanel() {
     }
   }
 
-  async function setAsBackground(msgId: string, src: string, publicId?: string) {
+  async function setAsBackground(msgId: string, src: string, _publicId?: string) {
     setSettingBg(msgId)
     try {
       const { canvasWidth: cw, canvasHeight: ch } = project

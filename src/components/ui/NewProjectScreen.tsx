@@ -14,7 +14,7 @@ const TEMPLATES = [
 ]
 
 export function NewProjectScreen() {
-  const { setCanvasSize, setActiveView, addLayer, replaceAllLayers, project } = useStore()
+  const { setCanvasSize, setActiveView, replaceAllLayers } = useStore()
   const [customW, setCustomW] = useState('1024')
   const [customH, setCustomH] = useState('768')
   const [uploading, setUploading] = useState(false)
