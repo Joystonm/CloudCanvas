@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Sparkles, Trash2, Zap } from 'lucide-react'
+import { Send, Sparkles, Trash2, Zap, ImageDown, Loader2 } from 'lucide-react'
 import { useStore } from '../../store'
 import { enhancePrompt } from '../../lib/cloudinary'
-import { generateImage, uploadToCloudinary } from '../../lib/api'
+import { generateImage } from '../../lib/api'
 import type { GenerationPreset } from '../../types'
+import toast from 'react-hot-toast'
 
 const PRESETS: { id: GenerationPreset; label: string }[] = [
   { id: 'photo',        label: 'Photo' },
@@ -27,9 +28,11 @@ export function GeneratorPanel() {
     chatMessages, isGenerating, selectedPreset,
     addMessage, setGenerating, setPreset, clearChat,
     replaceAllLayers, setActiveView, project,
+    updateLayer, reorderLayers, pushHistory,
   } = useStore()
 
   const [input, setInput] = useState('')
+  const [settingBg, setSettingBg] = useState<string | null>(null) // message id being applied
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -45,23 +48,14 @@ export function GeneratorPanel() {
     setInput('')
 
     try {
-      const imageUrl = await generateImage(enhanced)
-      addMessage({ role: 'assistant', content: 'Image generated! Opening in editor...', imageUrl })
+      const { url: imageUrl, publicId } = await generateImage(enhanced)
+      addMessage({ role: 'assistant', content: 'Image generated! Opening in editor...', imageUrl, imagePublicId: publicId ?? undefined })
 
-      let cloudUrl = imageUrl
-      let publicId: string | null = null
-      try {
-        const uploaded = await uploadToCloudinary(imageUrl)
-        cloudUrl = uploaded.secure_url
-        publicId = uploaded.public_id
-      } catch { /* use direct URL if Cloudinary upload fails */ }
-
-      // Fit image inside canvas
       const nat = await new Promise<{ w: number; h: number }>((resolve) => {
         const img = new window.Image()
         img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
         img.onerror = () => resolve({ w: project.canvasWidth, h: project.canvasHeight })
-        img.src = cloudUrl
+        img.src = imageUrl
       })
       const scale = Math.min(1, project.canvasWidth / nat.w, project.canvasHeight / nat.h)
       const w = Math.round(nat.w * scale)
@@ -74,7 +68,7 @@ export function GeneratorPanel() {
         x: Math.round((project.canvasWidth - w) / 2),
         y: Math.round((project.canvasHeight - h) / 2),
         width: w, height: h,
-        src: cloudUrl,
+        src: imageUrl,
         cloudinaryPublicId: publicId ?? undefined,
         transformations: [],
       })
@@ -83,6 +77,55 @@ export function GeneratorPanel() {
       addMessage({ role: 'assistant', content: `Error: ${err.message}` })
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function setAsBackground(msgId: string, src: string, publicId?: string) {
+    setSettingBg(msgId)
+    try {
+      const { canvasWidth: cw, canvasHeight: ch } = project
+
+      // Find the layer for this image
+      const layer = useStore.getState().project.layers.find(
+        (l) => l.src?.split('?')[0] === src.split('?')[0]
+      )
+      if (!layer) {
+        toast.error('Image not on canvas — it will be added automatically after generation')
+        return
+      }
+
+      // Load the image to get true pixel dimensions
+      const { natW, natH } = await new Promise<{ natW: number; natH: number }>((resolve) => {
+        const img = new window.Image()
+        img.onload = () => resolve({ natW: img.naturalWidth, natH: img.naturalHeight })
+        img.onerror = () => resolve({ natW: layer.width, natH: layer.height })
+        img.src = src.split('?')[0]
+      })
+
+      // Cover canvas preserving aspect ratio
+      const scale = Math.max(cw / natW, ch / natH)
+      const w = Math.round(natW * scale)
+      const h = Math.round(natH * scale)
+      const x = Math.round((cw - w) / 2)
+      const y = Math.round((ch - h) / 2)
+
+      pushHistory('Set as Background')
+
+      updateLayer(layer.id, { name: 'Background', x, y, width: w, height: h, naturalWidth: natW, naturalHeight: natH, locked: false })
+
+      const layers = useStore.getState().project.layers
+      const others = layers.filter((l) => l.id !== layer.id)
+      reorderLayers([...others.map((l) => l.id), layer.id])
+
+      // Select it so user can immediately drag to reframe
+      useStore.getState().setSelectedLayer(layer.id)
+
+      toast.success('Background set — drag to reframe, then lock when done!')
+      setActiveView('editor')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to set background')
+    } finally {
+      setSettingBg(null)
     }
   }
 
@@ -153,13 +196,26 @@ export function GeneratorPanel() {
             >
               <p className="text-sm">{msg.content}</p>
               {msg.imageUrl && (
-                <div className="mt-3 rounded-lg overflow-hidden">
-                  <img
-                    src={msg.imageUrl}
-                    alt="Generated"
-                    className="w-full rounded-lg object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
+                <div className="mt-3">
+                  <div className="rounded-lg overflow-hidden">
+                    <img
+                      src={msg.imageUrl}
+                      alt="Generated"
+                      className="w-full rounded-lg object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                  {/* Set as Background */}
+                  <button
+                    onClick={() => setAsBackground(msg.id, msg.imageUrl!, msg.imagePublicId)}
+                    disabled={settingBg === msg.id}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium bg-cc-elevated hover:bg-cc-card text-cc-muted hover:text-cc-text border border-cc-border transition-all disabled:opacity-50"
+                  >
+                    {settingBg === msg.id
+                      ? <><Loader2 size={11} className="animate-spin" /> Applying…</>
+                      : <><ImageDown size={11} /> Set as Background</>
+                    }
+                  </button>
                 </div>
               )}
             </div>

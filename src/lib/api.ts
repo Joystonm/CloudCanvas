@@ -1,33 +1,53 @@
-// All API calls happen directly from the browser — no backend server needed.
+// All API calls run directly from the browser.
+// /api/generate is proxied through Vite's dev server (vite.config.ts) to avoid
+// CORS restrictions on the Cloudinary Image Generation endpoint. The proxy also
+// injects the Authorization header so credentials never appear in the bundle.
 
-const MINIMAX_KEY  = import.meta.env.VITE_MINIMAX_API_KEY
-const CLOUD_NAME   = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
+const CLOUD_NAME    = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default'
 
-// ── MiniMax image generation ─────────────────────────────────────────────────
+// ── Cloudinary Image Generation ───────────────────────────────────────────────
+// Calls /api/generate which Vite proxies to:
+//   POST https://api.cloudinary.com/v1_1/{cloud}/image/generate
+// The generated image is automatically stored as a managed Cloudinary asset —
+// no separate upload step needed.
+// Docs: https://cloudinary.com/documentation/image_generation_addon
 
-export async function generateImage(prompt: string, aspectRatio = '1:1'): Promise<string> {
-  if (!MINIMAX_KEY) throw new Error('VITE_MINIMAX_API_KEY is not set')
+export async function generateImage(
+  prompt: string,
+  aspectRatio = '1:1'
+): Promise<{ url: string; publicId: string }> {
+  const body: Record<string, unknown> = {
+    prompt,
+    target: { target_type: 'managed_asset', folder: 'cloudcanvas' },
+  }
+  if (aspectRatio && aspectRatio !== '1:1') {
+    body.aspect_ratio = aspectRatio
+  }
 
-  const res = await fetch('https://api.minimax.io/v1/image_generation', {
+  const res = await fetch('/api/generate', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${MINIMAX_KEY}`,
-    },
-    body: JSON.stringify({ model: 'image-01', prompt, n: 1, aspect_ratio: aspectRatio }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
 
   const data = await res.json()
-  const url =
-    data?.data?.image_urls?.[0] ||
-    data?.data?.[0]?.url ||
-    data?.images?.[0]?.url ||
-    data?.output?.image_url ||
-    null
+  if (!res.ok) {
+    const msg =
+      data?.error?.message ||
+      (typeof data?.error === 'string' ? data.error : null) ||
+      data?.message ||
+      `Image generation failed (HTTP ${res.status})`
+    throw new Error(msg)
+  }
 
-  if (!url) throw new Error(data?.error || data?.message || 'No image URL in response')
-  return url
+  // Response shape: { data: { assets: [{ storage: { secure_url, public_id }, ... }] } }
+  const asset = data?.data?.assets?.[0]
+  const url: string = asset?.storage?.secure_url ?? null
+  const publicId: string = asset?.storage?.public_id ?? null
+  if (!url) throw new Error('No image URL in response — check that the Cloudinary Image Generation add-on is enabled on your account')
+
+  return { url, publicId }
 }
 
 // ── Cloudinary unsigned upload ───────────────────────────────────────────────
@@ -36,19 +56,14 @@ export async function generateImage(prompt: string, aspectRatio = '1:1'): Promis
 // Set VITE_CLOUDINARY_UPLOAD_PRESET to its name (default: ml_default)
 
 export async function uploadToCloudinary(
-  source: string | File  // URL string or File object
+  source: string | File
 ): Promise<{ secure_url: string; public_id: string }> {
   if (!CLOUD_NAME) throw new Error('VITE_CLOUDINARY_CLOUD_NAME is not set')
 
   const form = new FormData()
   form.append('upload_preset', UPLOAD_PRESET)
   form.append('folder', 'cloudcanvas')
-
-  if (typeof source === 'string') {
-    form.append('file', source)
-  } else {
-    form.append('file', source)
-  }
+  form.append('file', source)
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,

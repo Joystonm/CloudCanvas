@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Send, Loader2, Sparkles, X } from 'lucide-react'
 import { useStore } from '../../store'
 import { enhancePrompt } from '../../lib/cloudinary'
-import { generateImage, uploadToCloudinary } from '../../lib/api'
+import { generateImage } from '../../lib/api'
 import toast from 'react-hot-toast'
 
 const SUGGESTIONS = [
@@ -22,7 +22,7 @@ export function GeneratePopover({ onClose }: { onClose: () => void }) {
     setLoading(true)
     try {
       const enhanced = enhancePrompt(p, selectedPreset)
-      const imageUrl = await generateImage(enhanced)
+      const { url: imageUrl, publicId } = await generateImage(enhanced)
 
       const nat = await new Promise<{ w: number; h: number }>((resolve) => {
         const img = new window.Image()
@@ -34,19 +34,13 @@ export function GeneratePopover({ onClose }: { onClose: () => void }) {
       const w = Math.round(nat.w * scale)
       const h = Math.round(nat.h * scale)
 
-      let cloudUrl = imageUrl, publicId: string | undefined
-      try {
-        const up = await uploadToCloudinary(imageUrl)
-        cloudUrl = up.secure_url; publicId = up.public_id
-      } catch { /* use direct */ }
-
       replaceAllLayers({
         name: `Generated: ${p.slice(0, 30)}`, type: 'image',
         visible: true, locked: false, opacity: 1,
         x: Math.round((project.canvasWidth - w) / 2),
         y: Math.round((project.canvasHeight - h) / 2),
         width: w, height: h,
-        src: cloudUrl, cloudinaryPublicId: publicId, transformations: [],
+        src: imageUrl, cloudinaryPublicId: publicId, transformations: [],
       })
 
       toast.success('Image generated!')

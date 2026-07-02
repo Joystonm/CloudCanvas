@@ -3,11 +3,53 @@ import { Wand2, Eraser, Expand, Loader2, Check, Trash2 } from 'lucide-react'
 import { useStore } from '../../store'
 import toast from 'react-hot-toast'
 
+/**
+ * Build a clean Cloudinary URL for a generative-AI transformation.
+ *
+ * Cloudinary gen-AI endpoints (e_gen_fill, e_gen_remove, e_background_removal…)
+ * require the URL to use the bare public ID — no version prefix (v123456789),
+ * no file extension, and no prior transformation chain.  Sending any of those
+ * causes a 400 Bad Request.
+ *
+ * This function:
+ *  1. Strips the query string (?t=…, ?p=…)
+ *  2. Locates /upload/ in the URL
+ *  3. Drops everything after /upload/ that looks like a Cloudinary
+ *     transformation segment (pattern: starts with one or more lowercase
+ *     letters followed by an underscore, e.g. e_, f_, q_, ar_, g_, w_, c_…)
+ *     or a version segment (v followed only by digits).
+ *  4. Strips the file extension from the public ID (e.g. .png, .jpg, .webp).
+ *  5. Prepends the requested transformation.
+ */
 function injectTransformation(src: string, transformation: string): string {
   const clean = src.split('?')[0]
-  const idx = clean.indexOf('/upload/')
+  const uploadMarker = '/upload/'
+  const idx = clean.indexOf(uploadMarker)
   if (idx === -1) return clean
-  return clean.slice(0, idx + '/upload/'.length) + transformation + '/' + clean.slice(idx + '/upload/'.length)
+
+  const base = clean.slice(0, idx + uploadMarker.length)
+  const afterUpload = clean.slice(idx + uploadMarker.length)
+  const parts = afterUpload.split('/')
+
+  // Drop transformation segments (e_…, f_…, ar_…, g_…, etc.)
+  // and version segments (v1234567890).
+  const isTransformOrVersion = (seg: string) =>
+    /^[a-z]+_/.test(seg) || /^v\d+$/.test(seg)
+
+  const publicIdParts: string[] = []
+  for (const part of parts) {
+    if (!isTransformOrVersion(part)) {
+      publicIdParts.push(part)
+    }
+  }
+
+  // Strip file extension from the last segment (e.g. "photo.png" → "photo")
+  if (publicIdParts.length > 0) {
+    publicIdParts[publicIdParts.length - 1] = publicIdParts[publicIdParts.length - 1].replace(/\.[^/.]+$/, '')
+  }
+
+  const publicId = publicIdParts.join('/')
+  return `${base}${transformation}/${publicId}`
 }
 
 /** Cloudinary gen-AI returns 423/420 while processing. Poll until the image loads. */
@@ -38,12 +80,12 @@ const MAGIC_REMOVE_ACTIONS = [
 ]
 
 const EXPAND_ACTIONS = [
-  { label: 'Expand 16:9',   transformation: 'e_gen_fill,ar_16:9,g_auto,f_auto,q_auto' },
-  { label: 'Expand 9:16',   transformation: 'e_gen_fill,ar_9:16,g_auto,f_auto,q_auto' },
-  { label: 'Expand Square', transformation: 'e_gen_fill,ar_1:1,g_auto,f_auto,q_auto' },
-  { label: 'Expand 4:5',    transformation: 'e_gen_fill,ar_4:5,g_auto,f_auto,q_auto' },
-  { label: 'Expand 4:3',    transformation: 'e_gen_fill,ar_4:3,g_auto,f_auto,q_auto' },
-  { label: 'Expand 21:9',   transformation: 'e_gen_fill,ar_21:9,g_auto,f_auto,q_auto' },
+  { label: 'Expand 16:9',   transformation: 'c_pad,ar_16:9,b_gen_fill,f_auto,q_auto' },
+  { label: 'Expand 9:16',   transformation: 'c_pad,ar_9:16,b_gen_fill,f_auto,q_auto' },
+  { label: 'Expand Square', transformation: 'c_pad,ar_1:1,b_gen_fill,f_auto,q_auto' },
+  { label: 'Expand 4:5',    transformation: 'c_pad,ar_4:5,b_gen_fill,f_auto,q_auto' },
+  { label: 'Expand 4:3',    transformation: 'c_pad,ar_4:3,b_gen_fill,f_auto,q_auto' },
+  { label: 'Expand 21:9',   transformation: 'c_pad,ar_21:9,b_gen_fill,f_auto,q_auto' },
 ]
 
 export function MagicEditOverlay() {
@@ -120,12 +162,14 @@ export function MagicEditOverlay() {
     const transformation = `e_gen_remove:region_(x_${lx};y_${ly};w_${lw};h_${lh})`
 
     // Build from current layer.src so prior transformations are preserved.
-    // injectTransformation strips ?t= cache-bust before injecting.
+    // injectTransformation strips version, extension, and prior transforms.
     const baseSrc = layer.src.split('?')[0]
     const hasUpload = baseSrc.includes('/upload/')
+    // Strip extension from cloudinaryPublicId in case it was stored with one.
+    const barePublicId = layer.cloudinaryPublicId.replace(/\.[^/.]+$/, '')
     const newUrl = hasUpload
       ? injectTransformation(baseSrc, transformation)
-      : `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/${transformation}/${layer.cloudinaryPublicId}`
+      : `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/${transformation}/${barePublicId}`
 
     setLoading('painted')
     try {

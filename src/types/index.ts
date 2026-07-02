@@ -78,5 +78,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   imageUrl?: string;
+  imagePublicId?: string;
   timestamp: number;
 }

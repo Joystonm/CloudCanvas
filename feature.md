@@ -114,7 +114,7 @@ Professional browser-based media editing and AI generation.
 
 Cloudinary powers editing.
 
-MiniMax powers generation.
+Cloudinary Image Generation powers generation.
 
 ---
 
@@ -181,7 +181,7 @@ Cloudinary React SDK
 AI:
 
 ```text
-MiniMax Image Model
+Cloudinary Image Generation
 ```
 
 ---
@@ -212,7 +212,7 @@ Prompt Optimizer
 
 ↓
 
-MiniMax
+Cloudinary Image Generation
 
 ↓
 
@@ -226,21 +226,25 @@ Generated images must immediately become editable.
 
 ---
 
-# MiniMax Integration
+# Cloudinary Image Generation Integration
 
-Model:
+API:
 
 ```json
 {
-"model":"image-01",
 "purpose":"AI image generation",
-"endpoint":"https://api.minimax.io/v1/image_generation"
+"endpoint":"https://api.cloudinary.com/v1_1/{cloud_name}/image/generate",
+"auth":"HTTP Basic (API Key + API Secret)",
+"models":["flux","recraft","gpt-image","nano-banana","ideogram"]
 }
 ```
 
-Generate via backend.
+Generate via backend proxy.
 
-Never expose API key.
+Never expose API credentials.
+
+Generated images are automatically saved as managed Cloudinary assets —
+no separate upload step required.
 
 ---
 

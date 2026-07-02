@@ -510,8 +510,14 @@ export function Canvas() {
           <Rect x={offsetX} y={offsetY} width={cw} height={ch} stroke="#4d4d4d" strokeWidth={1} />
         </Layer>
 
-        {/* Content layer */}
-        <Layer x={offsetX} y={offsetY} scaleX={effectiveZoom} scaleY={effectiveZoom}>
+        {/* Content layer — clipped to canvas bounds so layers don't overflow */}
+        <Layer
+          x={offsetX} y={offsetY}
+          scaleX={effectiveZoom} scaleY={effectiveZoom}
+          clipX={0} clipY={0}
+          clipWidth={project.canvasWidth}
+          clipHeight={project.canvasHeight}
+        >
           {visibleLayers.map((layer) => {
             const isSelected = selectedLayerId === layer.id
             const onChange = (patch: Partial<LayerType>) => updateLayer(layer.id, patch)

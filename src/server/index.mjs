@@ -1,9 +1,30 @@
 import http from 'http'
 import https from 'https'
 import { URL } from 'url'
+import { readFileSync } from 'fs'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Load .env file manually (no external deps needed for ESM)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+try {
+  const envPath = resolve(__dirname, '../../.env')
+  const envFile = readFileSync(envPath, 'utf8')
+  for (const line of envFile.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    const val = trimmed.slice(eqIdx + 1).trim()
+    if (!process.env[key]) process.env[key] = val
+  }
+} catch { /* .env not found, rely on OS env vars */ }
 
 const PORT = 3001
-const MINIMAX_ENDPOINT = 'https://api.minimax.io/v1/image_generation'
+// Correct Cloudinary Image Generation endpoint (from Console Code panel)
+const CLOUDINARY_GENERATE_ENDPOINT = (cloud) =>
+  `https://api.cloudinary.com/v2/generate/${cloud}/text_to_image`
 const CLOUDINARY_UPLOAD_ENDPOINT = (cloud) =>
   `https://api.cloudinary.com/v1_1/${cloud}/image/upload`
 
@@ -87,20 +108,35 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`)
 
-  // Generate image via MiniMax
+  // Generate image via Cloudinary Image Generation add-on
+  // Requires: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+  // The generated image is automatically saved as a managed Cloudinary asset.
+  // Response includes secure_url and public_id directly — no upload step needed.
   if (req.method === 'POST' && url.pathname === '/api/generate') {
     const body = await readBody(req)
-    const apiKey = process.env.MINIMAX_API_KEY
-    if (!apiKey) {
+    const cloud = process.env.VITE_CLOUDINARY_CLOUD_NAME
+    const key = process.env.VITE_CLOUDINARY_API_KEY
+    const secret = process.env.VITE_CLOUDINARY_API_SECRET
+    if (!cloud || !key || !secret) {
       res.writeHead(500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'MINIMAX_API_KEY not set' }))
+      res.end(JSON.stringify({ error: 'CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET must all be set' }))
       return
     }
     try {
+      const requestBody = {
+        prompt: body.prompt,
+        model: { id: 'flux-2-klein-9b' },
+        image_size: {
+          aspect_ratio: body.aspect_ratio || '1:1',
+          resolution: '1K',
+        },
+        target: { target_type: 'managed_asset', folder: 'cloudcanvas' },
+      }
+      const auth = Buffer.from(`${key}:${secret}`).toString('base64')
       const result = await httpsPost(
-        MINIMAX_ENDPOINT,
-        { Authorization: `Bearer ${apiKey}` },
-        { model: 'image-01', prompt: body.prompt, n: 1, aspect_ratio: body.aspect_ratio || '1:1' }
+        CLOUDINARY_GENERATE_ENDPOINT(cloud),
+        { Authorization: `Basic ${auth}` },
+        requestBody
       )
       res.writeHead(result.status, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(result.body))
@@ -111,12 +147,12 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // Upload image URL to Cloudinary
+  // Upload image URL to Cloudinary (used for user-uploaded files, not for generated images)
   if (req.method === 'POST' && url.pathname === '/api/cloudinary/upload') {
     const body = await readBody(req)
-    const cloud = process.env.CLOUDINARY_CLOUD_NAME
-    const key = process.env.CLOUDINARY_API_KEY
-    const secret = process.env.CLOUDINARY_API_SECRET
+    const cloud = process.env.VITE_CLOUDINARY_CLOUD_NAME
+    const key = process.env.VITE_CLOUDINARY_API_KEY
+    const secret = process.env.VITE_CLOUDINARY_API_SECRET
     if (!cloud || !key || !secret) {
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Cloudinary env vars not set' }))
@@ -143,5 +179,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`CloudCanvas API server running on http://localhost:${PORT}`)
-  console.log('Required env vars: MINIMAX_API_KEY, CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET')
+  console.log('Required env vars: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET')
 })

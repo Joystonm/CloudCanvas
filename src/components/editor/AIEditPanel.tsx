@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
   Wand2, Loader2, Sliders, Bold, Italic, Underline,
-  AlignLeft, AlignCenter, AlignRight, Sparkles, RefreshCw,
-  FlipHorizontal, ChevronDown, ChevronRight, Crop, Palette, ArrowUpCircle,
+  AlignLeft, AlignCenter, AlignRight,
+  ChevronDown, ChevronRight, Crop, Palette, ArrowUpCircle, ImageDown,
 } from 'lucide-react'
 import { useStore } from '../../store'
 import type { Layer } from '../../types'
@@ -237,22 +237,67 @@ function ShapePropertiesPanel({ layer, onChange }: { layer: Layer; onChange: (p:
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function AIEditPanel() {
-  const { project, selectedLayerId, updateLayer, pushHistory } = useStore()
+  const { project, selectedLayerId, updateLayer, pushHistory, reorderLayers, setSelectedLayer } = useStore()
   const [openSection, setOpenSection] = useState<string>('filters')
   const [busyLabel, setBusyLabel] = useState<string | null>(null)
-  // Gen AI state
-  const [replaceFrom, setReplaceFrom] = useState('')
-  const [replaceTo, setReplaceTo] = useState('')
-  const [recolorObj, setRecolorObj] = useState('')
-  const [recolorTo, setRecolorTo] = useState('#ff0000')
-  const [bgPrompt, setBgPrompt] = useState('')
+  const [settingBg, setSettingBg] = useState(false)
 
   const selectedLayer = project.layers.find((l) => l.id === selectedLayerId)
   const canApply = !!(selectedLayer?.cloudinaryPublicId && selectedLayer?.src)
   const isText = selectedLayer?.type === 'text'
   const isShape = selectedLayer?.type === 'shape'
+  const isImage = selectedLayer?.type === 'image' && !!selectedLayer?.src
 
   function toggle(id: string) { setOpenSection((s) => s === id ? '' : id) }
+
+  async function setAsBackground() {
+    if (!selectedLayer?.src) { toast.error('No image selected'); return }
+    setSettingBg(true)
+    try {
+      const { canvasWidth: cw, canvasHeight: ch } = project
+
+      // Load the image to get its true pixel dimensions
+      const { natW, natH } = await new Promise<{ natW: number; natH: number }>((resolve) => {
+        const img = new window.Image()
+        img.onload = () => resolve({ natW: img.naturalWidth, natH: img.naturalHeight })
+        img.onerror = () => resolve({ natW: selectedLayer.width, natH: selectedLayer.height })
+        img.src = selectedLayer.src!.split('?')[0]
+      })
+
+      // Scale to COVER the canvas (like object-fit: cover) — fills entire canvas,
+      // may overflow edges so user can drag to reframe
+      const scale = Math.max(cw / natW, ch / natH)
+      const w = Math.round(natW * scale)
+      const h = Math.round(natH * scale)
+      // Center so overflow is equal on all sides
+      const x = Math.round((cw - w) / 2)
+      const y = Math.round((ch - h) / 2)
+
+      pushHistory(`Set as Background: ${selectedLayer.name}`)
+
+      // Update the selected layer in-place: resize to cover, center, rename, unlock, send to bottom
+      updateLayer(selectedLayer.id, {
+        name: 'Background',
+        x, y, width: w, height: h,
+        naturalWidth: natW, naturalHeight: natH,
+        locked: false,
+      })
+
+      // Move to bottom of layer stack
+      const layers = useStore.getState().project.layers
+      const others = layers.filter((l) => l.id !== selectedLayer.id)
+      reorderLayers([...others.map((l) => l.id), selectedLayer.id])
+
+      // Keep it selected so user can immediately drag to reframe
+      setSelectedLayer(selectedLayer.id)
+
+      toast.success('Background set — drag to reframe, then lock when done')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to set background')
+    } finally {
+      setSettingBg(false)
+    }
+  }
 
   async function apply(transformation: string, label: string, generative = false) {
     if (!canApply) { toast.error('Select a Cloudinary-uploaded layer'); return }
@@ -282,6 +327,18 @@ export function AIEditPanel() {
         <p className="text-cc-muted text-xs truncate">
           {selectedLayer ? <><span className="text-cc-accent">{selectedLayer.name}</span></> : 'Select a layer to edit'}
         </p>
+        {isImage && (
+          <button
+            onClick={setAsBackground}
+            disabled={settingBg}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium bg-cc-elevated hover:bg-cc-card text-cc-muted hover:text-cc-text border border-cc-border transition-all disabled:opacity-50"
+          >
+            {settingBg
+              ? <><Loader2 size={11} className="animate-spin" /> Applying…</>
+              : <><ImageDown size={11} /> Set as Background</>
+            }
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-dark">
@@ -301,53 +358,6 @@ export function AIEditPanel() {
         )}
 
         {!isText && !isShape && (<>
-
-          {/* Generative AI */}
-          <Section title="Generative AI" icon={<Sparkles size={12} />} open={openSection === 'genai'} onToggle={() => toggle('genai')}>
-            <div className="space-y-4 pt-1">
-              {/* Replace */}
-              <div>
-                <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Replace Object</p>
-                <div className="flex gap-1.5 mb-1.5">
-                  <input className="input-pill text-xs flex-1" placeholder="From (e.g. cat)" value={replaceFrom} onChange={(e) => setReplaceFrom(e.target.value)} />
-                  <input className="input-pill text-xs flex-1" placeholder="To (e.g. dog)" value={replaceTo} onChange={(e) => setReplaceTo(e.target.value)} />
-                </div>
-                <button onClick={() => runBusy('Replace', `e_gen_replace:from_${encodeURIComponent(replaceFrom)};to_${encodeURIComponent(replaceTo)}`)}
-                  disabled={!canApply || !replaceFrom.trim() || !replaceTo.trim() || busyLabel === 'Replace'}
-                  className="w-full py-1.5 bg-cc-elevated hover:bg-cc-card rounded-pill text-xs text-cc-muted hover:text-cc-text transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
-                  {busyLabel === 'Replace' ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Replace
-                </button>
-              </div>
-              {/* Recolor */}
-              <div>
-                <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Recolor Object</p>
-                <div className="flex gap-1.5 mb-1.5">
-                  <input className="input-pill text-xs flex-1" placeholder="Object (e.g. shirt)" value={recolorObj} onChange={(e) => setRecolorObj(e.target.value)} />
-                  <label className="relative w-9 h-9 rounded-lg overflow-hidden border border-cc-border cursor-pointer flex-shrink-0">
-                    <input type="color" value={recolorTo} onChange={(e) => setRecolorTo(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-                    <div className="w-full h-full rounded-lg" style={{ background: recolorTo }} />
-                  </label>
-                </div>
-                <button onClick={() => runBusy('Recolor', `e_gen_recolor:prompt_${encodeURIComponent(recolorObj)};to-color_${recolorTo.replace('#', '')}`)}
-                  disabled={!canApply || !recolorObj.trim() || busyLabel === 'Recolor'}
-                  className="w-full py-1.5 bg-cc-elevated hover:bg-cc-card rounded-pill text-xs text-cc-muted hover:text-cc-text transition-all disabled:opacity-40 flex items-center justify-center gap-1.5">
-                  {busyLabel === 'Recolor' ? <Loader2 size={11} className="animate-spin" /> : <FlipHorizontal size={11} />} Recolor
-                </button>
-              </div>
-              {/* BG Replace */}
-              <div>
-                <p className="text-cc-muted text-[10px] uppercase tracking-wider mb-1.5">Replace Background</p>
-                <div className="flex gap-1.5">
-                  <input className="input-pill text-xs flex-1" placeholder="Describe new background…" value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
-                  <button onClick={() => runBusy('BgReplace', bgPrompt.trim() ? `e_gen_background_replace:prompt_${encodeURIComponent(bgPrompt)}` : 'e_gen_background_replace')}
-                    disabled={!canApply || busyLabel === 'BgReplace'}
-                    className="w-8 h-8 rounded-full bg-cc-accent hover:bg-white flex items-center justify-center text-black flex-shrink-0 disabled:opacity-40 transition-all">
-                    {busyLabel === 'BgReplace' ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Section>
 
           {/* Tools */}
           <Section title="Tools" icon={<Wand2 size={12} />} open={openSection === 'tools'} onToggle={() => toggle('tools')}>
